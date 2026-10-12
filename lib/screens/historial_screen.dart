@@ -1,14 +1,19 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../models/cotizacion.dart';
+import '../models/empresa.dart';
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
+import '../utils/formatters.dart';
 import '../widgets/widgets.dart';
 
 class HistorialScreen extends StatefulWidget {
-  const HistorialScreen({super.key});
+  final Empresa empresa;
+  final ValueChanged<Cotizacion> onDuplicar;
+  const HistorialScreen({super.key, required this.empresa, required this.onDuplicar});
 
   @override
   State<HistorialScreen> createState() => _HistorialScreenState();
@@ -16,12 +21,11 @@ class HistorialScreen extends StatefulWidget {
 
 class _HistorialScreenState extends State<HistorialScreen> {
   final _storage = StorageService();
+  final _busquedaCtrl = TextEditingController();
   List<Cotizacion> _all = [];
   String _filtroMes = 'Todas';
-
-  final _fmt =
-      NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
-  final _dateFmt = DateFormat('dd/MM/yyyy HH:mm', 'es_CO');
+  String _busqueda = '';
+  bool _ordenDesc = true;
 
   @override
   void initState() {
@@ -29,24 +33,40 @@ class _HistorialScreenState extends State<HistorialScreen> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final list = await _storage.loadCotizaciones();
+    if (!mounted) return;
     setState(() => _all = list);
   }
 
   List<String> get _meses {
     final s = <String>{};
     for (final c in _all) {
-      s.add(DateFormat('MMMM yyyy', 'es_CO').format(c.fecha));
+      s.add(TmFormat.monthYear(c.fecha));
     }
     return ['Todas', ...s.toList()];
   }
 
   List<Cotizacion> get _filtered {
-    if (_filtroMes == 'Todas') return _all;
-    return _all.where((c) {
-      return DateFormat('MMMM yyyy', 'es_CO').format(c.fecha) == _filtroMes;
+    final q = _busqueda.trim().toLowerCase();
+    final list = _all.where((c) {
+      final okMes = _filtroMes == 'Todas' || TmFormat.monthYear(c.fecha) == _filtroMes;
+      if (!okMes) return false;
+      if (q.isEmpty) return true;
+      return c.cliente.toLowerCase().contains(q) ||
+          c.obra.toLowerCase().contains(q) ||
+          c.notas.toLowerCase().contains(q) ||
+          c.numero.toString().contains(q) ||
+          c.items.any((i) => i.nombre.toLowerCase().contains(q));
     }).toList();
+    list.sort((a, b) => _ordenDesc ? b.fecha.compareTo(a.fecha) : a.fecha.compareTo(b.fecha));
+    return list;
   }
 
   Future<void> _eliminar(Cotizacion c) async {
@@ -73,7 +93,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
     );
     if (ok == true) {
       await _storage.deleteCotizacion(c.id);
-      _load();
+      await _load();
     }
   }
 
@@ -84,8 +104,41 @@ class _HistorialScreenState extends State<HistorialScreen> {
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       isScrollControlled: true,
-      builder: (_) => _DetalleSheet(c: c, fmt: _fmt, dateFmt: _dateFmt),
+      builder: (_) => _DetalleSheet(
+        c: c,
+        empresa: widget.empresa,
+        onDuplicar: widget.onDuplicar,
+        onEstadoChange: (nuevo) async {
+          await _storage.updateCotizacion(c.copyWith(estado: nuevo));
+          await _load();
+        },
+      ),
     );
+  }
+
+  Future<void> _exportCsv() async {
+    final list = _filtered;
+    if (list.isEmpty) { showTmSnack(context, 'No hay cotizaciones para exportar', error: true); return; }
+    final sb = StringBuffer('Numero,Fecha,Cliente,Obra,Estado,Items,Total\n');
+    for (final c in list) {
+      String esc(String v) => '"${v.replaceAll('"', '""')}"';
+      sb.writeln([
+        c.numero,
+        TmFormat.date(c.fecha),
+        esc(c.cliente),
+        esc(c.obra),
+        c.estado,
+        c.items.length,
+        c.total.toStringAsFixed(0),
+      ].join(','));
+    }
+    try {
+      final f = File('${Directory.systemTemp.path}/T&M_historial.csv');
+      await f.writeAsString(sb.toString());
+      await Share.shareXFiles([XFile(f.path)], subject: 'Historial T&M');
+    } catch (_) {
+      if (mounted) showTmSnack(context, 'No se pudo exportar el CSV', error: true);
+    }
   }
 
   @override
@@ -94,9 +147,38 @@ class _HistorialScreenState extends State<HistorialScreen> {
 
     return Column(
       children: [
-        // ── FILTROS ───────────────────────────────────────
+        // ── BÚSQUEDA + ORDEN + EXPORT ─────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(children: [
+            Expanded(
+              child: TmInput(
+                controller: _busquedaCtrl,
+                label: 'Buscar cliente, obra o #',
+                icon: Icons.search_rounded,
+                suffixIcon: _busqueda.isEmpty ? null : Icons.close_rounded,
+                onSuffixTap: () => setState(() { _busquedaCtrl.clear(); _busqueda = ''; }),
+                onChanged: (v) => setState(() => _busqueda = v),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: _ordenDesc ? 'Más recientes primero' : 'Más antiguas primero',
+              onPressed: () => setState(() => _ordenDesc = !_ordenDesc),
+              icon: Icon(_ordenDesc ? Icons.sort_rounded : Icons.sort_rounded,
+                  color: AppTheme.primary),
+            ),
+            IconButton(
+              tooltip: 'Exportar CSV',
+              onPressed: _exportCsv,
+              icon: const Icon(Icons.ios_share_rounded, color: AppTheme.textSecondary),
+            ),
+          ]),
+        ),
+
+        // ── FILTROS POR MES ───────────────────────────────
         SizedBox(
-          height: 48,
+          height: 44,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -110,14 +192,11 @@ class _HistorialScreenState extends State<HistorialScreen> {
                   onTap: () => setState(() => _filtroMes = m),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: active ? AppTheme.primary : AppTheme.surface,
                       borderRadius: BorderRadius.circular(100),
-                      border: Border.all(
-                          color:
-                              active ? AppTheme.primary : AppTheme.border),
+                      border: Border.all(color: active ? AppTheme.primary : AppTheme.border),
                     ),
                     child: Text(
                       m,
@@ -137,33 +216,21 @@ class _HistorialScreenState extends State<HistorialScreen> {
         // ── LISTA ─────────────────────────────────────────
         Expanded(
           child: filtered.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text('📭', style: TextStyle(fontSize: 56)),
-                      const SizedBox(height: 16),
-                      Text('Sin cotizaciones',
-                          style: GoogleFonts.syne(
-                              fontSize: 18, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Crea tu primera cotización\nen la pestaña Cotizar',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: AppTheme.textSecondary, fontSize: 14),
-                      ),
-                    ],
-                  ),
+              ? TmEmptyState(
+                  icon: '📭',
+                  title: 'Sin cotizaciones',
+                  message: _busqueda.isNotEmpty
+                      ? 'No hay resultados para tu búsqueda.'
+                      : 'Crea tu primera cotización en la pestaña Cotizar.',
                 )
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                   itemCount: filtered.length,
                   itemBuilder: (_, i) => _CotizacionTile(
                     c: filtered[i],
-                    fmt: _fmt,
                     onTap: () => _verDetalle(filtered[i]),
                     onDelete: () => _eliminar(filtered[i]),
+                    onDuplicar: () => widget.onDuplicar(filtered[i]),
                   ),
                 ),
         ),
@@ -175,15 +242,23 @@ class _HistorialScreenState extends State<HistorialScreen> {
 // ─── TILE ─────────────────────────────────────────────────────────────────────
 class _CotizacionTile extends StatelessWidget {
   final Cotizacion c;
-  final NumberFormat fmt;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final VoidCallback onDuplicar;
 
-  const _CotizacionTile(
-      {required this.c,
-      required this.fmt,
-      required this.onTap,
-      required this.onDelete});
+  const _CotizacionTile({
+    required this.c,
+    required this.onTap,
+    required this.onDelete,
+    required this.onDuplicar,
+  });
+
+  static Color _estadoColor(String e) => switch (e) {
+        EstadoCotizacion.enviada => const Color(0xFF5E72E4),
+        EstadoCotizacion.aceptada => AppTheme.success,
+        EstadoCotizacion.rechazada => AppTheme.danger,
+        _ => AppTheme.textSecondary,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -209,51 +284,44 @@ class _CotizacionTile extends StatelessWidget {
                           style: GoogleFonts.syne(
                               fontSize: 15, fontWeight: FontWeight.w700)),
                       const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          DateFormat('dd/MM/yy').format(c.fecha),
-                          style: const TextStyle(
-                              fontSize: 10,
-                              color: AppTheme.primary,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ),
+                      TmBadge(label: EstadoCotizacion.label(c.estado), color: _estadoColor(c.estado)),
                     ],
                   ),
+                  if (c.cliente.isNotEmpty || c.obra.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      [if (c.cliente.isNotEmpty) c.cliente, if (c.obra.isNotEmpty) c.obra].join(' · '),
+                      style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Text(
-                    fmt.format(c.total),
+                    TmFormat.cop(c.total),
                     style: GoogleFonts.syne(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: AppTheme.primary),
+                        fontSize: 22, fontWeight: FontWeight.w800, color: AppTheme.primary),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    [
-                      if (c.m2 > 0) '${c.m2} m²',
-                      if (c.m3Calculado > 0)
-                        '≈ ${c.m3Calculado.toStringAsFixed(2)} m³',
-                      if (c.notas.isNotEmpty)
-                        c.notas.length > 30
-                            ? '${c.notas.substring(0, 30)}...'
-                            : c.notas,
-                    ].join('  ·  '),
-                    style: const TextStyle(
-                        fontSize: 12, color: AppTheme.textSecondary),
+                    '${c.items.length} item(s)  ·  ${TmFormat.shortDate(c.fecha)}',
+                    style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
                   ),
                 ],
               ),
             ),
-            IconButton(
-              onPressed: onDelete,
-              icon: const Icon(Icons.delete_outline, color: AppTheme.danger),
+            Column(
+              children: [
+                IconButton(
+                  tooltip: 'Duplicar',
+                  onPressed: onDuplicar,
+                  icon: const Icon(Icons.copy_rounded, color: AppTheme.textSecondary, size: 20),
+                ),
+                IconButton(
+                  tooltip: 'Eliminar',
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, color: AppTheme.danger, size: 20),
+                ),
+              ],
             ),
           ],
         ),
@@ -263,138 +331,201 @@ class _CotizacionTile extends StatelessWidget {
 }
 
 // ─── DETALLE BOTTOM SHEET ─────────────────────────────────────────────────────
-class _DetalleSheet extends StatelessWidget {
+class _DetalleSheet extends StatefulWidget {
   final Cotizacion c;
-  final NumberFormat fmt;
-  final DateFormat dateFmt;
+  final Empresa empresa;
+  final ValueChanged<Cotizacion> onDuplicar;
+  final ValueChanged<String> onEstadoChange;
 
-  const _DetalleSheet(
-      {required this.c, required this.fmt, required this.dateFmt});
+  const _DetalleSheet({
+    required this.c,
+    required this.empresa,
+    required this.onDuplicar,
+    required this.onEstadoChange,
+  });
+
+  @override
+  State<_DetalleSheet> createState() => _DetalleSheetState();
+}
+
+class _DetalleSheetState extends State<_DetalleSheet> {
+  late String _estado;
+  bool _compartiendo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _estado = widget.c.estado;
+  }
+
+  Future<void> _compartir() async {
+    setState(() => _compartiendo = true);
+    try {
+      await PdfService.shareCotizacion(widget.c, empresa: widget.empresa);
+    } catch (_) {
+      if (mounted) showTmSnack(context, 'No se pudo compartir el PDF', error: true);
+    } finally {
+      if (mounted) setState(() => _compartiendo = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final c = widget.c;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                    color: AppTheme.border,
-                    borderRadius: BorderRadius.circular(2))),
-          ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                      color: AppTheme.border, borderRadius: BorderRadius.circular(2))),
+            ),
 
-          Text('Cotización #${c.numero}',
-              style: GoogleFonts.syne(
-                  fontSize: 22, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 4),
-          Text(dateFmt.format(c.fecha),
-              style: const TextStyle(
-                  color: AppTheme.textSecondary, fontSize: 13)),
-          const SizedBox(height: 20),
+            Text('Cotización #${c.numero}',
+                style: GoogleFonts.syne(fontSize: 22, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(TmFormat.dateTime(c.fecha),
+                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+            if (c.cliente.isNotEmpty || c.obra.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              if (c.cliente.isNotEmpty) Text('Cliente: ${c.cliente}',
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary)),
+              if (c.obra.isNotEmpty) Text('Obra: ${c.obra}',
+                  style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
+            ],
+            const SizedBox(height: 16),
 
-          // Visualización m³
-          if (c.m2 > 0) ...[
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border:
-                    Border.all(color: AppTheme.primary.withOpacity(0.3)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+            // ── Estado de seguimiento ─────────────────────
+            Text('Estado',
+                style: GoogleFonts.syne(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            Wrap(spacing: 8, children: EstadoCotizacion.todos.map((e) {
+              final active = e == _estado;
+              final color = _CotizacionTile._estadoColor(e);
+              return GestureDetector(
+                onTap: () {
+                  setState(() => _estado = e);
+                  widget.onEstadoChange(e);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: active ? color.withValues(alpha: 0.18) : AppTheme.bg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: active ? color : AppTheme.border),
+                  ),
+                  child: Text(EstadoCotizacion.label(e),
+                      style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: active ? color : AppTheme.textSecondary)),
+                ),
+              );
+            }).toList()),
+            const SizedBox(height: 16),
+
+            // ── Detalle de materiales (el arreglo clave) ──
+            Text('Materiales',
+                style: GoogleFonts.syne(fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+            const SizedBox(height: 6),
+            TmCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              child: Column(
                 children: [
-                  _infoBox('Área', '${c.m2} m²'),
-                  const Text('×',
-                      style: TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 18)),
-                  _infoBox('Grosor',
-                      '${(c.alturaPoron * 100).toStringAsFixed(0)} cm'),
-                  const Text('=',
-                      style: TextStyle(
-                          color: AppTheme.textSecondary, fontSize: 18)),
-                  _infoBox('Volumen',
-                      '${c.m3Calculado.toStringAsFixed(2)} m³',
-                      highlight: true),
+                  if (c.items.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('Sin detalle de materiales (cotización antigua).',
+                          style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
+                    )
+                  else
+                    ...c.items.map((item) {
+                      final col = AppTheme.categoryColor(item.categoria);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(children: [
+                          Container(width: 3, height: 28, decoration: BoxDecoration(
+                              color: col, borderRadius: BorderRadius.circular(2))),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(item.nombre,
+                                  style: const TextStyle(fontSize: 13, color: AppTheme.textPrimary)),
+                              Text('${TmFormat.qty(item.cantidad)} ${item.unidad}  ×  ${TmFormat.cop(item.precioUnitario)}',
+                                  style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                            ]),
+                          ),
+                          Text(TmFormat.cop(item.subtotal),
+                              style: GoogleFonts.syne(
+                                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+                        ]),
+                      );
+                    }),
+                  const Divider(color: AppTheme.border, height: 20),
+                  ResultRow(label: 'TOTAL', value: TmFormat.cop(c.total), highlight: true),
                 ],
               ),
             ),
-            const SizedBox(height: 16),
-          ],
 
-          // Rows
-          TmCard(
-            child: Column(
-              children: [
-                if (c.m2 > 0)
-                  ResultRow(
-                    label: '${c.m2} m²  ×  ${fmt.format(c.precioM2)}',
-                    value: fmt.format(c.subTotalM2),
-                  ),
-                if (c.m3 > 0)
-                  ResultRow(
-                    label: '${c.m3} m³  ×  ${fmt.format(c.precioM3)}',
-                    value: fmt.format(c.subTotalM3),
-                  ),
-                const Divider(color: AppTheme.border, height: 16),
-                ResultRow(
-                    label: 'TOTAL',
-                    value: fmt.format(c.total),
-                    isTotal: true),
-              ],
+            if (c.notas.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text('Notas',
+                  style: GoogleFonts.syne(
+                      fontSize: 12, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+              const SizedBox(height: 6),
+              Text(c.notas, style: const TextStyle(fontSize: 14, color: AppTheme.textPrimary)),
+            ],
+
+            const SizedBox(height: 20),
+            TmButton(
+              label: 'Compartir (WhatsApp, PDF)',
+              icon: Icons.share_rounded,
+              onPressed: _compartiendo ? null : _compartir,
+              loading: _compartiendo,
+              fullWidth: true,
             ),
-          ),
-
-          if (c.notas.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('Notas',
-                style: GoogleFonts.syne(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.textSecondary)),
-            const SizedBox(height: 6),
-            Text(c.notas,
-                style: const TextStyle(
-                    fontSize: 14, color: AppTheme.textPrimary)),
+            const SizedBox(height: 8),
+            TmButton(
+              label: 'PDF con precios',
+              icon: Icons.picture_as_pdf_rounded,
+              color: const Color(0xFF5E72E4),
+              onPressed: () => PdfService.printCotizacion(c, empresa: widget.empresa),
+              fullWidth: true,
+            ),
+            const SizedBox(height: 8),
+            TmButton(
+              label: 'PDF solo lista de materiales',
+              icon: Icons.list_alt_rounded,
+              color: AppTheme.surface2,
+              onPressed: () => PdfService.printCotizacion(c, mostrarPrecios: false, empresa: widget.empresa),
+              fullWidth: true,
+            ),
+            const SizedBox(height: 8),
+            TmButton(
+              label: 'Duplicar cotización',
+              icon: Icons.copy_rounded,
+              color: AppTheme.success,
+              onPressed: () {
+                Navigator.pop(context);
+                widget.onDuplicar(c);
+              },
+              fullWidth: true,
+            ),
+            const SizedBox(height: 8),
+            TmButton(
+              label: 'Cerrar',
+              onPressed: () => Navigator.pop(context),
+              fullWidth: true,
+            ),
           ],
-
-          const SizedBox(height: 20),
-          TmButton(
-            label: '🖨️  Imprimir / Compartir PDF',
-            onPressed: () => PdfService.printCotizacion(c),
-          ),
-          const SizedBox(height: 10),
-          TmButton(
-            label: 'Cerrar',
-            secondary: true,
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+        ),
       ),
     );
   }
-
-  Widget _infoBox(String label, String value, {bool highlight = false}) =>
-      Column(
-        children: [
-          Text(value,
-              style: GoogleFonts.syne(
-                fontSize: highlight ? 15 : 13,
-                fontWeight: FontWeight.w800,
-                color:
-                    highlight ? AppTheme.primary : AppTheme.textPrimary,
-              )),
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 10, color: AppTheme.textSecondary)),
-        ],
-      );
 }

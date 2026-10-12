@@ -2,231 +2,227 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
-// ─── SECTION LABEL ────────────────────────────────────────────────────────────
-class SectionLabel extends StatelessWidget {
-  final String text;
-  const SectionLabel(this.text, {super.key});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Text(
-          text.toUpperCase(),
-          style: GoogleFonts.syne(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: AppTheme.textSecondary,
-            letterSpacing: 1.2,
-          ),
-        ),
-      );
-}
-
-// ─── TM INPUT FIELD ───────────────────────────────────────────────────────────
-class TmInput extends StatelessWidget {
-  final String label;
-  final String? prefix;
-  final String? suffix;
-  final TextEditingController controller;
-  final TextInputType keyboardType;
-  final String? hint;
-  final int maxLines;
-  final void Function(String)? onChanged;
-
-  const TmInput({
-    super.key,
-    required this.label,
-    required this.controller,
-    this.prefix,
-    this.suffix,
-    this.keyboardType = TextInputType.number,
-    this.hint,
-    this.maxLines = 1,
-    this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 13, color: AppTheme.textSecondary)),
-          const SizedBox(height: 6),
-          TextField(
-            controller: controller,
-            keyboardType:
-                maxLines > 1 ? TextInputType.multiline : keyboardType,
-            maxLines: maxLines,
-            onChanged: onChanged,
-            style: const TextStyle(fontSize: 16, color: AppTheme.textPrimary),
-            decoration: InputDecoration(
-              hintText: hint,
-              prefixText: prefix != null ? '$prefix  ' : null,
-              prefixStyle: const TextStyle(
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13),
-              suffixText: suffix,
-              suffixStyle: const TextStyle(
-                  color: AppTheme.textSecondary, fontSize: 13),
-            ),
-          ),
-          const SizedBox(height: 14),
-        ],
-      );
-}
-
-// ─── TM CARD ─────────────────────────────────────────────────────────────────
+// ── TmCard ────────────────────────────────────────────────────
 class TmCard extends StatelessWidget {
   final Widget child;
   final EdgeInsets? padding;
-  final Color? borderColor;
-
-  const TmCard(
-      {super.key, required this.child, this.padding, this.borderColor});
+  const TmCard({super.key, required this.child, this.padding});
 
   @override
   Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: padding ?? const EdgeInsets.all(18),
+        padding: padding ?? const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppTheme.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: borderColor ?? AppTheme.border, width: 1),
+          border: Border.all(color: AppTheme.border),
         ),
         child: child,
       );
 }
 
-// ─── RESULT ROW ───────────────────────────────────────────────────────────────
-class ResultRow extends StatelessWidget {
+// ── TmInput ───────────────────────────────────────────────────
+class TmInput extends StatelessWidget {
+  final TextEditingController controller;
   final String label;
-  final String value;
-  final bool isTotal;
-  final Color? valueColor;
+  final IconData? icon;
+  final IconData? suffixIcon;
+  final VoidCallback? onSuffixTap;
+  final TextInputType? keyboardType;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
+  final TextInputAction? textInputAction;
+  final bool obscureText;
+  final int? maxLines;
+  final bool enabled;
 
-  const ResultRow({
+  const TmInput({
     super.key,
+    required this.controller,
     required this.label,
-    required this.value,
-    this.isTotal = false,
-    this.valueColor,
+    this.icon,
+    this.suffixIcon,
+    this.onSuffixTap,
+    this.keyboardType,
+    this.onChanged,
+    this.onSubmitted,
+    this.textInputAction,
+    this.obscureText = false,
+    this.maxLines = 1,
+    this.enabled = true,
   });
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: GoogleFonts.syne(
-                fontSize: isTotal ? 15 : 13,
-                fontWeight:
-                    isTotal ? FontWeight.w700 : FontWeight.w400,
-                color:
-                    isTotal ? AppTheme.textPrimary : AppTheme.textSecondary,
-              ),
-            ),
-            Text(
-              value,
-              style: GoogleFonts.syne(
-                fontSize: isTotal ? 22 : 15,
-                fontWeight: FontWeight.w700,
-                color: valueColor ??
-                    (isTotal ? AppTheme.primary : AppTheme.textPrimary),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) => TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+        textInputAction: textInputAction,
+        obscureText: obscureText,
+        maxLines: maxLines,
+        enabled: enabled,
+        style: GoogleFonts.dmSans(fontSize: 14, color: AppTheme.textPrimary),
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: GoogleFonts.dmSans(fontSize: 13, color: AppTheme.textSecondary),
+          prefixIcon: icon != null ? Icon(icon, size: 18, color: AppTheme.textSecondary) : null,
+          suffixIcon: suffixIcon != null
+              ? GestureDetector(onTap: onSuffixTap, child: Icon(suffixIcon, size: 18, color: AppTheme.textSecondary))
+              : null,
+          filled: true,
+          fillColor: AppTheme.bg,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppTheme.primary, width: 1.5),
+          ),
         ),
       );
 }
 
-// ─── PRIMARY BUTTON ───────────────────────────────────────────────────────────
+// ── TmButton ──────────────────────────────────────────────────
 class TmButton extends StatelessWidget {
   final String label;
-  final VoidCallback? onPressed;
-  final bool secondary;
-  final bool danger;
   final IconData? icon;
+  final VoidCallback? onPressed;
+  final Color? color;
+  final Color? foreground;
+  final bool fullWidth;
+  final bool loading;
 
   const TmButton({
     super.key,
     required this.label,
-    this.onPressed,
-    this.secondary = false,
-    this.danger = false,
     this.icon,
+    required this.onPressed,
+    this.color,
+    this.foreground,
+    this.fullWidth = false,
+    this.loading = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    Color bg = secondary
-        ? AppTheme.surface2
-        : danger
-            ? AppTheme.danger
-            : AppTheme.primary;
-    Color fg = (secondary) ? AppTheme.textPrimary : Colors.black;
-    if (danger) fg = Colors.white;
-
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: icon != null ? Icon(icon, size: 20) : const SizedBox.shrink(),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: bg,
-          foregroundColor: fg,
-          side: secondary
-              ? const BorderSide(color: AppTheme.border)
-              : BorderSide.none,
-          textStyle:
-              GoogleFonts.syne(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+    final btn = ElevatedButton.icon(
+      onPressed: loading ? null : onPressed,
+      icon: loading
+          ? const SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+          : (icon != null ? Icon(icon, size: 18) : const SizedBox.shrink()),
+      label: Text(label, style: GoogleFonts.dmSans(fontWeight: FontWeight.w600, fontSize: 14)),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: color ?? AppTheme.primary,
+        foregroundColor: foreground ?? Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 0,
       ),
     );
+    return fullWidth ? SizedBox(width: double.infinity, child: btn) : btn;
   }
 }
 
-// ─── INFO CHIP ────────────────────────────────────────────────────────────────
-class InfoChip extends StatelessWidget {
+// ── ResultRow ─────────────────────────────────────────────────
+class ResultRow extends StatelessWidget {
   final String label;
   final String value;
-  final Color? color;
+  final bool highlight;
 
-  const InfoChip(
-      {super.key, required this.label, required this.value, this.color});
+  const ResultRow({super.key, required this.label, required this.value, this.highlight = false});
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: (color ?? AppTheme.primary).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: (color ?? AppTheme.primary).withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 10,
-                    color: color ?? AppTheme.primary,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 3),
+            Text(label, style: GoogleFonts.dmSans(fontSize: 13, color: AppTheme.textSecondary)),
             Text(value,
                 style: GoogleFonts.syne(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: color ?? AppTheme.primary)),
+                  fontSize: highlight ? 15 : 13,
+                  fontWeight: highlight ? FontWeight.w700 : FontWeight.w500,
+                  color: highlight ? AppTheme.primary : AppTheme.textPrimary,
+                )),
           ],
         ),
       );
+}
+
+// ── TmBadge ───────────────────────────────────────────────────
+class TmBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const TmBadge({super.key, required this.label, this.color = AppTheme.primary});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Text(label,
+            style: GoogleFonts.dmSans(
+                fontSize: 10, color: color, fontWeight: FontWeight.w600)),
+      );
+}
+
+// ── TmEmptyState ──────────────────────────────────────────────
+class TmEmptyState extends StatelessWidget {
+  final String icon;
+  final String title;
+  final String message;
+  final Widget? action;
+
+  const TmEmptyState({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(icon, style: const TextStyle(fontSize: 56)),
+              const SizedBox(height: 16),
+              Text(title,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.syne(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              Text(message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+              if (action != null) ...[const SizedBox(height: 20), action!],
+            ],
+          ),
+        ),
+      );
+}
+
+// ── Snack unificado ───────────────────────────────────────────
+void showTmSnack(BuildContext context, String message, {bool error = false}) {
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: error ? AppTheme.danger : AppTheme.success,
+      duration: const Duration(seconds: 2),
+    ));
 }

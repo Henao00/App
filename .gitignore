@@ -10,6 +10,9 @@ pubspec.lock
 android/.gradle/
 android/local.properties
 android/app/build/
+android/key.properties
+*.jks
+*.keystore
 
 # iOS
 ios/Pods/

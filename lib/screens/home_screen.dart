@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../models/cotizacion.dart';
 import '../services/storage_service.dart';
+import '../utils/formatters.dart';
 
 class HomeScreen extends StatefulWidget {
   final AppPrecios precios;
@@ -27,10 +27,11 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _storage = StorageService();
   int _totalCotizaciones = 0;
+  int _delMes = 0;
   double _totalFacturado = 0;
-
-  final _fmt =
-      NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
+  double _promedio = 0;
+  String _topMaterial = '—';
+  List<Cotizacion> _ultimas = [];
 
   @override
   void initState() {
@@ -38,7 +39,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadStats();
   }
 
-  // Se llama también cuando el padre actualiza refreshKey
   @override
   void didUpdateWidget(HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -50,9 +50,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _loadStats() async {
     final list = await _storage.loadCotizaciones();
     if (!mounted) return;
+    final now = DateTime.now();
+    final total = list.fold<double>(0, (a, c) => a + c.total);
+    final mes = list.where((c) => c.fecha.year == now.year && c.fecha.month == now.month).length;
+
+    // Material más cotizado (por número de apariciones).
+    final conteo = <String, int>{};
+    for (final c in list) {
+      for (final it in c.items) {
+        conteo[it.nombre] = (conteo[it.nombre] ?? 0) + 1;
+      }
+    }
+    String top = '—';
+    if (conteo.isNotEmpty) {
+      top = conteo.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    }
+
     setState(() {
       _totalCotizaciones = list.length;
-      _totalFacturado = list.fold(0, (a, c) => a + c.total);
+      _totalFacturado = total;
+      _delMes = mes;
+      _promedio = list.isEmpty ? 0 : total / list.length;
+      _topMaterial = top;
+      _ultimas = list.take(3).toList();
     });
   }
 
@@ -78,7 +98,6 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Logo T&M
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -86,21 +105,19 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // Logo image
                           ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: Image.asset(
                               'assets/icon/logo.png',
                               width: 56,
                               height: 56,
+                              cacheWidth: 112,
+                              cacheHeight: 112,
                               fit: BoxFit.contain,
                               errorBuilder: (_, __, ___) => const SizedBox(
                                 width: 56,
                                 height: 56,
-                                child: Center(
-                                  child: Text('🏗️',
-                                      style: TextStyle(fontSize: 40)),
-                                ),
+                                child: Center(child: Text('🏗️', style: TextStyle(fontSize: 40))),
                               ),
                             ),
                           ),
@@ -127,17 +144,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 14),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.15),
+                          color: Colors.black.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text('Construcción · Colombia',
                             style: GoogleFonts.dmSans(
-                                fontSize: 12,
-                                color: Colors.black87,
-                                fontWeight: FontWeight.w600)),
+                                fontSize: 12, color: Colors.black87, fontWeight: FontWeight.w600)),
                       ),
                     ],
                   ),
@@ -148,28 +162,41 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 22),
 
+          // ── RESUMEN (dashboard) ─────────────────────────
+          Text('Resumen',
+              style: GoogleFonts.syne(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: _metric('📄', 'Cotizaciones', '$_totalCotizaciones')),
+            const SizedBox(width: 12),
+            Expanded(child: _metric('💰', 'Total', TmFormat.cop(_totalFacturado))),
+          ]),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: _metric('📅', 'Este mes', '$_delMes')),
+            const SizedBox(width: 12),
+            Expanded(child: _metric('📊', 'Promedio', TmFormat.cop(_promedio))),
+          ]),
+
+          const SizedBox(height: 22),
+
           // ── PRECIOS ─────────────────────────────────────
+          Text('Precios actuales',
+              style: GoogleFonts.syne(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+          const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: _priceCard(
-                    'Precio m²', _fmt.format(widget.precios.precioM2), 'm²'),
-              ),
+              Expanded(child: _priceCard('Precio m²', TmFormat.cop(widget.precios.precioM2), 'm²')),
               const SizedBox(width: 12),
-              Expanded(
-                child: _priceCard(
-                    'Precio m³', _fmt.format(widget.precios.precioM3), 'm³'),
-              ),
+              Expanded(child: _priceCard('Precio m³', TmFormat.cop(widget.precios.precioM3), 'm³')),
             ],
           ),
-
           const SizedBox(height: 12),
-
-          // Altura default
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: AppTheme.surface,
               borderRadius: BorderRadius.circular(14),
@@ -183,15 +210,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text('Grosor de porón por defecto',
-                        style: TextStyle(
-                            fontSize: 12, color: AppTheme.textSecondary)),
+                        style: TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
                     Text(
                       '${widget.precios.alturaDefault} m  '
                       '(${(widget.precios.alturaDefault * 100).toStringAsFixed(0)} cm)',
                       style: GoogleFonts.syne(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.textPrimary),
+                          fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.textPrimary),
                     ),
                   ],
                 ),
@@ -226,45 +250,98 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
 
-          const SizedBox(height: 22),
+          // ── ÚLTIMAS COTIZACIONES ────────────────────────
+          if (_ultimas.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              Text('Últimas cotizaciones',
+                  style: GoogleFonts.syne(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.textSecondary)),
+              GestureDetector(
+                onTap: widget.onHistorial,
+                child: Text('Ver todas',
+                    style: GoogleFonts.dmSans(
+                        fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary)),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            ..._ultimas.map((c) => GestureDetector(
+                  onTap: widget.onHistorial,
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppTheme.border),
+                    ),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('#${c.numero}  ${c.cliente.isNotEmpty ? c.cliente : 'Sin cliente'}',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
+                              overflow: TextOverflow.ellipsis),
+                          Text(TmFormat.date(c.fecha),
+                              style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                        ]),
+                      ),
+                      Text(TmFormat.cop(c.total),
+                          style: GoogleFonts.syne(
+                              fontSize: 14, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+                    ]),
+                  ),
+                )),
+          ],
 
-          // ── ESTADÍSTICA ───────────────────────────────────
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: AppTheme.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Resumen general',
-                    style: GoogleFonts.syne(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.textSecondary)),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                        child: _statItem(
-                            '📄', 'Cotizaciones', '$_totalCotizaciones')),
-                    Container(
-                        width: 1, height: 40, color: AppTheme.border),
-                    Expanded(
-                        child: _statItem('💰', 'Total facturado',
-                            _fmt.format(_totalFacturado))),
-                  ],
+          if (_topMaterial != '—') ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppTheme.surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Row(children: [
+                const Text('⭐', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('Material más cotizado: $_topMaterial',
+                      style: const TextStyle(fontSize: 13, color: AppTheme.textSecondary)),
                 ),
-              ],
+              ]),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _metric(String icon, String label, String value) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(icon, style: const TextStyle(fontSize: 20)),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(value,
+                  style: GoogleFonts.syne(
+                      fontSize: 17, fontWeight: FontWeight.w700, color: AppTheme.primary)),
+            ),
+            Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          ],
+        ),
+      );
 
   Widget _priceCard(String label, String value, String unit) => Container(
         padding: const EdgeInsets.all(16),
@@ -276,18 +353,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary)),
+            Text(label, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
             const SizedBox(height: 6),
             Text(value,
                 style: GoogleFonts.syne(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.primary)),
+                    fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.primary)),
             Text('por $unit',
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary)),
+                style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
           ],
         ),
       );
@@ -308,7 +380,7 @@ class _HomeScreenState extends State<HomeScreen> {
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTheme.border),
             gradient: LinearGradient(
-              colors: [accentLeft.withOpacity(0.05), Colors.transparent],
+              colors: [accentLeft.withValues(alpha: 0.05), Colors.transparent],
               begin: Alignment.centerLeft,
             ),
           ),
@@ -318,30 +390,12 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(icon, style: const TextStyle(fontSize: 30)),
               const SizedBox(height: 10),
               Text(title,
-                  style: GoogleFonts.syne(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
+                  style: GoogleFonts.syne(fontSize: 15, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text(subtitle,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
+                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary)),
             ],
           ),
-        ),
-      );
-
-  Widget _statItem(String icon, String label, String value) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Column(
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 22)),
-            const SizedBox(height: 6),
-            Text(value,
-                style: GoogleFonts.syne(
-                    fontSize: 16, fontWeight: FontWeight.w700)),
-            Text(label,
-                style: const TextStyle(
-                    fontSize: 11, color: AppTheme.textSecondary)),
-          ],
         ),
       );
 }

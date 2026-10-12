@@ -14,6 +14,21 @@ class AppTheme {
   static const Color success = Color(0xFF2DCE89);
   static const Color danger = Color(0xFFF5365C);
 
+  /// Color por categoría de material en formato hex (sin `#`).
+  /// Fuente única de verdad: la usan la UI y el generador de PDF.
+  static const Map<String, String> categoryHex = {
+    'poron': 'F5A623',
+    'cemento': '9AA0B8',
+    'arena': 'D4A056',
+    'varilla': '2DCE89',
+    'ladrillo': 'E57B5F',
+    'pintura': '5E72E4',
+    'custom': '11CDEF',
+  };
+
+  static Color categoryColor(String categoria) =>
+      Color(int.parse('FF${categoryHex[categoria] ?? '11CDEF'}', radix: 16));
+
   static ThemeData get dark => ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: bg,

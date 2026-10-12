@@ -1,0 +1,10 @@
+# Plantilla de firma de producción.
+# Copia este archivo como android/key.properties y completa con tus datos.
+# Genera el keystore con:
+#   keytool -genkey -v -keystore %USERPROFILE%\tm-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tm
+#
+# NO subas key.properties ni el .jks al repositorio.
+storePassword=CAMBIAR
+keyPassword=CAMBIAR
+keyAlias=tm
+storeFile=C:\\ruta\\a\\tm-release.jks

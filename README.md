@@ -1,35 +1,26 @@
 # 📱 T&M — Cotizador de Porones
-**App móvil para Android & iOS** | Flutter
+
+App móvil (Android & iOS) en **Flutter** para cotizar materiales de construcción
+en Colombia, con **PDF profesional**, historial de seguimiento y funciona 100% offline.
 
 ---
 
-## 🚀 Cómo instalar y correr
+## 🚀 Requisitos y ejecución
 
-### Requisitos
-- Flutter SDK 3.x → https://flutter.dev/docs/get-started/install
-- Android Studio o VS Code con extensión Flutter
+- **Flutter 3.35+** (probado con 3.47) — https://flutter.dev/docs/get-started/install
+- Android Studio o VS Code con la extensión Flutter
 - Para iOS: macOS + Xcode
 
-### Pasos
-
 ```bash
-# 1. Clona o descomprime el proyecto
-cd tm_porones
-
-# 2. Instala dependencias
-flutter pub get
-
-# 3. Corre en dispositivo/emulador
-flutter run
-
-# 4. Compilar APK para Android
+flutter pub get         # dependencias
+flutter run             # ejecutar en dispositivo/emulador
+flutter analyze         # análisis estático
+flutter test            # pruebas unitarias
 flutter build apk --release
-
-# 5. Compilar para iOS
 flutter build ios --release
 ```
 
-El APK queda en: `build/app/outputs/flutter-apk/app-release.apk`
+APK de salida: `build/app/outputs/flutter-apk/app-release.apk`
 
 ---
 
@@ -37,66 +28,106 @@ El APK queda en: `build/app/outputs/flutter-apk/app-release.apk`
 
 | Módulo | Descripción |
 |--------|-------------|
-| 🏠 Inicio | Panel con precios actuales y acceso rápido |
-| 📋 Cotizar | Ingresa m², grosor del porón → calcula m³ automáticamente |
-| 📦 Conversión m² → m³ | `m³ = m² × grosor del porón` con chips de selección rápida |
-| 📁 Historial | Lista todas las cotizaciones con filtros por mes |
-| 🖨️ PDF | Genera e imprime/comparte cotización profesional |
-| ⚙️ Config | Precios editables, grosor por defecto, estadísticas |
+| 🚀 Onboarding | Introducción de 3 pasos solo la primera vez |
+| 🏠 Inicio (dashboard) | Métricas (total, este mes, promedio), precios, últimas cotizaciones |
+| 📋 Cotizar | Catálogo filtrable + búsqueda; carrito; cálculo `m³ = m² × grosor` |
+| 🧱 Materiales | Porones (m²/m³), cemento, arena, varilla por diámetro, ladrillo, bloque, pintura, estuco, variables propios |
+| 📁 Historial | Búsqueda, filtro por mes, orden, **detalle con materiales**, estados (borrador/enviada/aceptada/rechazada) |
+| 🔁 Duplicar | Repetir una cotización existente en un toque |
+| 🖨️ PDF | Con precios o solo lista de materiales, con marca de empresa |
+| 📤 Compartir | PDF por WhatsApp/correo, exportar historial a **CSV**, respaldo JSON |
+| ⚙️ Config | Precios por material, materiales propios, **datos de empresa**, respaldo, borrar historial |
 
 ---
 
 ## 📐 Fórmula de conversión
 
 ```
-Volumen (m³) = Área de plancha (m²) × Grosor del porón (m)
+Volumen (m³) = Área de la plancha (m²) × Grosor del porón (m)
 
-Ejemplo:
-  Plancha de 50 m²
-  Porón de 25 cm (0.25 m)
-  → 50 × 0.25 = 12.5 m³ de porones
+Ejemplo:  50 m² × 0.25 m = 12.5 m³
 ```
 
-El grosor es configurable por cotización (chips: 20, 25, 30, 35, 40 cm)
-y también tiene un valor por defecto editable en Configuración.
+El grosor es configurable por cotización (chips: 20/25/30/35/40 cm) y tiene un
+valor por defecto editable en Configuración.
 
 ---
 
-## 📦 Dependencias principales
+## 🏗️ Arquitectura
+
+Arquitectura por capas, estado local con `setState` (sin dependencias de gestión
+de estado) y persistencia detrás de una interfaz para poder migrar a la nube.
+
+```
+lib/
+  main.dart                     ← arranque, onboarding-gate y navegación
+  models/
+    cotizacion.dart             ← Cotizacion, MaterialItem, MaterialPreset, AppPrecios, estado
+    empresa.dart                ← datos de la empresa (marca del PDF)
+  services/
+    storage_service.dart        ← TmStore (interfaz) + StorageService (SharedPreferences)
+    pdf_service.dart            ← generación/compartición de PDF
+  utils/
+    formatters.dart             ← formato y parseo es-CO centralizados
+  widgets/widgets.dart          ← TmCard, TmInput, TmButton, TmBadge, TmEmptyState…
+  screens/
+    onboarding_screen.dart
+    home_screen.dart
+    cotizador_screen.dart
+    historial_screen.dart
+    config_screen.dart
+test/                           ← pruebas unitarias (modelos, storage, formateo)
+```
+
+**Preparado para la nube:** las pantallas dependen de la interfaz `TmStore`.
+Basta con crear una implementación (Firebase/Supabase) y sustituirla en la
+construcción, sin tocar la UI.
+
+---
+
+## 🔐 Firma de producción (Android)
+
+Por defecto compila con la firma de *debug*. Para firmar de verdad:
+
+1. Copia `android/key.properties.example` a `android/key.properties`.
+2. Genera un keystore y completa los datos:
+
+```bash
+keytool -genkey -v -keystore %USERPROFILE%\tm-release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias tm
+```
+
+`applicationId` / `namespace`: **com.tm.porones**. `key.properties` y los
+`.jks`/`.keystore` están en `.gitignore`.
+
+---
+
+## 💰 Modelo comercial (propuesta)
+
+| Plan | Incluye |
+|------|---------|
+| **Free** | Historial local, PDF básico, catálogo |
+| **Pro** | Marca propia sin restricción, export CSV/Excel, métricas, clientes ilimitados, respaldo en nube |
+| **Empresa** | Multi-usuario, catálogo de precios compartido, roles |
+
+---
+
+## 🔮 Roadmap
+
+- ☁️ Sincronización en la nube + autenticación (usando `TmStore`)
+- 💾 Copias de seguridad automáticas
+- 📊 Reportes avanzados y exportación a Excel
+- 🎨 Tema claro (la identidad actual es oscura por diseño)
+- 🤖 Estimación de materiales desde una descripción de obra
+
+---
+
+## 📦 Dependencias
 
 ```yaml
 shared_preferences   # almacenamiento local offline
 google_fonts         # tipografías Syne + DM Sans
-pdf + printing       # generación y compartir PDF
-intl                 # formato de moneda COP
-uuid                 # IDs únicos por cotización
-share_plus           # compartir por WhatsApp, email, etc.
-```
-
----
-
-## 🔮 Expansión futura a la nube
-
-El servicio `lib/services/storage_service.dart` está diseñado para ser
-reemplazado o extendido con Firebase Firestore o Supabase sin tocar
-las pantallas. Solo se cambia la implementación del servicio.
-
----
-
-## 🏗️ Estructura del proyecto
-
-```
-lib/
-  main.dart                  ← entrada y navegación principal
-  theme/app_theme.dart       ← colores y estilos T&M
-  models/cotizacion.dart     ← modelos de datos
-  services/
-    storage_service.dart     ← persistencia local (SharedPreferences)
-    pdf_service.dart         ← generación de PDF profesional
-  widgets/widgets.dart       ← componentes reutilizables
-  screens/
-    home_screen.dart         ← pantalla de inicio
-    cotizador_screen.dart    ← módulo de cotización
-    historial_screen.dart    ← historial con filtros
-    config_screen.dart       ← configuración de precios
+pdf + printing       # generación, impresión y compartir PDF
+intl                 # formato de moneda/fecha es-CO
+uuid                 # IDs únicos
+share_plus           # compartir CSV y respaldos
 ```
